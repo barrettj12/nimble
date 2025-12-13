@@ -1,6 +1,5 @@
-use std::io::copy;
-
-use crate::types::AgentState;
+use crate::state::AgentState;
+use axum::http::HeaderMap;
 use axum::{Router, routing::get};
 use axum::{
     body::Bytes,
@@ -8,6 +7,8 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
+use std::io::copy;
+use uuid::Uuid;
 
 const PORT: u16 = 7080;
 
@@ -34,6 +35,13 @@ async fn create_build(
     State(state): State<AgentState>,
     body: Bytes,
 ) -> (StatusCode, Json<CreateBuildResponse>) {
+    // TODO: check Content-Type header
+
+    let build_id = Uuid::new_v4();
+
+    // Body contains zipped source code - need to save this to disk
+    state.save_archive(build_id, body).await?;
+
     // Read tgz archive from body
     // Extract tgz to temp folder
     //
