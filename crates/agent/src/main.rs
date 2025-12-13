@@ -1,42 +1,19 @@
-use serde::Deserialize;
-use std::{env, fs, path::Path};
-mod builders;
+use crate::api::start_api;
+mod api;
+mod workers;
+use workers::BuildJob;
 mod types;
-use builders::{Builder, GoBuilder};
+use types::State;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Determine project path
-    let args: Vec<String> = env::args().collect();
-    if args.len() <= 1 {
-        // TODO: try to get cwd
-        return Err("Must provide project path".into());
-    }
-    let project_path = Path::new(&args[1]);
-    // TODO: stat project path
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create build queue
+    let (build_tx, build_rx) = tokio::sync::mpsc::channel::<BuildJob>(100);
 
-    // Read config
-    let project_cfg_raw = fs::read_to_string(project_path.join("nimble.yaml"))?;
-    let project_cfg: ProjectConfig = serde_yaml::from_str(&project_cfg_raw)?;
+    let state = State {
+        build_queue: build_tx,
+    };
 
-    let _builder = get_builder(&project_cfg.builder);
-    // let image = builder.build(project_path);
-
-    // let deploy;
-    // deployer.deploy(image);
+    start_api(state).await?;
     Ok(())
 }
-
-#[derive(Debug, Deserialize)]
-struct ProjectConfig {
-    builder: String,
-    deploy: String,
-}
-
-fn get_builder(r#type: &str) -> Result<Box<dyn Builder>, String> {
-    match r#type {
-        "go" => Ok(Box::new(GoBuilder::new())),
-        _ => Err(format!("Unknown builder type: {}", r#type)),
-    }
-}
-
-
