@@ -1,19 +1,18 @@
-use crate::config::AgentConfig;
-use anyhow::Context;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::str::FromStr;
-use std::sync::Arc;
 use std::{
-    fs,
+    fmt, fs,
     path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
 };
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use tar::Archive;
-use tokio::task::spawn_blocking;
-use tokio::{fs::create_dir_all, sync::mpsc::Receiver};
+use tokio::{fs::create_dir_all, sync::mpsc::Receiver, task::spawn_blocking};
 use tracing::{error, info};
 use uuid::Uuid;
+
+use crate::config::AgentConfig;
 
 pub struct BuildJob {
     pub build_id: Uuid,

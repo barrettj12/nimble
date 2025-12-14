@@ -4,12 +4,14 @@ mod config;
 mod state;
 mod workers;
 
-use crate::api::start_api;
-use crate::config::AgentConfig;
-use crate::state::AgentState;
-use crate::workers::BuildJob;
-use crate::workers::build::BuildWorker;
 use std::sync::Arc;
+
+use crate::{
+    api::start_api,
+    config::AgentConfig,
+    state::AgentState,
+    workers::build::{BuildJob, BuildWorker},
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

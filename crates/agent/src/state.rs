@@ -1,12 +1,11 @@
-use crate::config::AgentConfig;
-use crate::workers::BuildJob;
-use anyhow::Context;
-use anyhow::Result;
-use axum::body::Bytes;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
-use tokio::{fs::File, io::AsyncWriteExt};
+
+use anyhow::{Context, Result};
+use axum::body::Bytes;
+use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Sender};
 use uuid::Uuid;
+
+use crate::{config::AgentConfig, workers::build::BuildJob};
 
 #[derive(Clone)]
 pub struct AgentState {

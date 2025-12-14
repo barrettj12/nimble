@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+
 use uuid::Uuid;
 
 /// RunMode tells the agent whether it is running in a development or production environment.

@@ -1,13 +1,19 @@
-use crate::state::AgentState;
-use crate::workers::BuildJob;
-use crate::workers::build::BuildStatus;
-use axum::response::IntoResponse;
-use axum::response::Response;
-use axum::{Json, body::Bytes, extract::State, http::StatusCode};
-use axum::{Router, routing::get};
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::get,
+};
 use serde::Serialize;
 use tokio::sync::mpsc::error::TrySendError;
 use uuid::Uuid;
+
+use crate::{
+    state::AgentState,
+    workers::build::{BuildJob, BuildStatus},
+};
 
 // TODO: move this into AgentConfig
 const PORT: u16 = 7080;
