@@ -58,7 +58,7 @@ impl AgentConfig {
             dir.clone()
         } else {
             match self.run_mode {
-                RunMode::Dev => PathBuf::from("./data"),
+                RunMode::Dev => PathBuf::from("./.nimbledata"),
                 RunMode::Prod => PathBuf::from("/var/lib/nimble"),
             }
         }
@@ -73,7 +73,7 @@ impl AgentConfig {
 }
 
 // Paths contains convenience methods to generate paths to certain artifacts.
-struct Paths {
+pub struct Paths {
     base_dir: PathBuf,
 }
 

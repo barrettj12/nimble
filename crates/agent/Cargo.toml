@@ -5,6 +5,9 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-axum = "0.7"
+anyhow = "1.0.100"
+axum = { version = "0.7", features = ["macros"] }
+serde = { version = "1.0.228", features = ["serde_derive"] }
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1.43"
 uuid = { version = "1.19.0", features = ["v4"] }

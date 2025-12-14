@@ -1,15 +1,12 @@
 use crate::state::AgentState;
-use axum::http::HeaderMap;
+use axum::response::IntoResponse;
+use axum::response::Response;
+use axum::{Json, body::Bytes, extract::State, http::StatusCode};
 use axum::{Router, routing::get};
-use axum::{
-    body::Bytes,
-    extract::{BodyStream, State},
-    http::StatusCode,
-    response::Json,
-};
-use std::io::copy;
+use serde::Serialize;
 use uuid::Uuid;
 
+// TODO: move this into AgentConfig
 const PORT: u16 = 7080;
 
 pub async fn start_api(state: AgentState) -> Result<(), Box<dyn std::error::Error>> {
@@ -29,23 +26,77 @@ pub async fn start_api(state: AgentState) -> Result<(), Box<dyn std::error::Erro
 
 async fn list_builds() {}
 
-struct CreateBuildResponse {}
+#[derive(Serialize)]
+struct CreateBuildResponse {
+    build_id: String,
+    pub status: String,
+}
 
 async fn create_build(
     State(state): State<AgentState>,
     body: Bytes,
-) -> (StatusCode, Json<CreateBuildResponse>) {
+) -> Result<Json<CreateBuildResponse>, ApiError> {
     // TODO: check Content-Type header
 
     let build_id = Uuid::new_v4();
 
     // Body contains zipped source code - need to save this to disk
-    state.save_archive(build_id, body).await?;
+    state
+        .save_archive(build_id, body)
+        .await
+        .map_err(ApiError::Internal)?;
 
-    // Read tgz archive from body
-    // Extract tgz to temp folder
-    //
-    "ok"
+    // TODO: add build to queue
+
+    let resp = CreateBuildResponse {
+        build_id: build_id.to_string(),
+        status: "queued".into(),
+    };
+    Ok(Json(resp))
 }
 
 async fn get_build() {}
+
+// Errors
+
+// ApiError represents errors returned by the API.
+#[derive(Debug)]
+pub enum ApiError {
+    NotFound,
+    BadRequest(String),
+    Internal(anyhow::Error),
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        match self {
+            ApiError::NotFound => (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not found".into(),
+                }),
+            )
+                .into_response(),
+
+            ApiError::BadRequest(msg) => {
+                (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: msg })).into_response()
+            }
+
+            ApiError::Internal(err) => {
+                tracing::error!(?err, "internal error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "internal server error".into(),
+                    }),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
