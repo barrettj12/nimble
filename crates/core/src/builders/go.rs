@@ -1,5 +1,6 @@
-use crate::builders::{Builder, Image};
 use std::path::Path;
+
+use crate::builders::{Builder, Image};
 
 pub struct GoBuilder;
 

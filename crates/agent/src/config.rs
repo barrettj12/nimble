@@ -43,7 +43,7 @@ impl AgentConfig {
 
         Self {
             run_mode: RunMode::from_env(),
-            data_dir: data_dir,
+            data_dir,
         }
     }
 

@@ -1,6 +1,6 @@
+use std::{fs, path::Path};
+
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
 
 /// Builder type for building the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,14 +95,13 @@ pub enum ConfigError {
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::IoError(msg) => write!(f, "I/O error: {}", msg),
-            ConfigError::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            ConfigError::MissingField(field) => write!(f, "Missing required field: {}", field),
+            ConfigError::IoError(msg) => write!(f, "I/O error: {msg}"),
+            ConfigError::ParseError(msg) => write!(f, "Parse error: {msg}"),
+            ConfigError::MissingField(field) => write!(f, "Missing required field: {field}"),
             ConfigError::InvalidBuilder(builder) => {
                 write!(
                     f,
-                    "Invalid builder type: {}. Valid options: dockerfile, go",
-                    builder
+                    "Invalid builder type: {builder}. Valid options: dockerfile, go"
                 )
             }
         }

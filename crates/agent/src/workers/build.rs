@@ -54,7 +54,7 @@ impl FromStr for BuildStatus {
             "building" => Ok(BuildStatus::Building),
             "success" => Ok(BuildStatus::Success),
             "failed" => Ok(BuildStatus::Failed),
-            _ => Err(format!("Unknown build status: {}", s)),
+            _ => Err(format!("Unknown build status: {s}")),
         }
     }
 }
@@ -194,7 +194,7 @@ fn sanitize_tar_path(entry_path: &Path, base: &Path) -> Result<PathBuf> {
             std::path::Component::Normal(c) => out.push(c),
             std::path::Component::CurDir => {}
             _ => {
-                anyhow::bail!("invalid path component in archive entry: {:?}", entry_path);
+                anyhow::bail!("invalid path component in archive entry: {entry_path:?}");
             }
         }
     }

@@ -1,7 +1,9 @@
-use crate::builders::{Builder, Image};
-use async_trait::async_trait;
 use std::path::Path;
+
+use async_trait::async_trait;
 use tokio::process::Command;
+
+use crate::builders::{Builder, Image};
 
 pub struct DockerBuilder;
 
@@ -29,7 +31,7 @@ impl Builder for DockerBuilder {
         }
 
         // Build the full image reference
-        let image_ref = format!("{}:{}", image_name, image_tag);
+        let image_ref = format!("{image_name}:{image_tag}");
 
         // Run docker build
         let output = Command::new("docker")
@@ -41,7 +43,7 @@ impl Builder for DockerBuilder {
             .arg(build_path)
             .output()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to execute docker build: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to execute docker build: {e}"))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -66,7 +68,7 @@ async fn get_image_digest(image_ref: &str) -> anyhow::Result<String> {
         .arg(image_ref)
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to inspect image: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to inspect image: {e}"))?;
 
     if !output.status.success() {
         anyhow::bail!(
@@ -88,7 +90,7 @@ async fn get_image_digest(image_ref: &str) -> anyhow::Result<String> {
             .arg(image_ref)
             .output()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to get image ID: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to get image ID: {e}"))?;
 
         if id_output.status.success() {
             let id = String::from_utf8_lossy(&id_output.stdout)
@@ -105,6 +107,6 @@ async fn get_image_digest(image_ref: &str) -> anyhow::Result<String> {
     if let Some(digest_part) = output_str.split('@').nth(1) {
         Ok(digest_part.to_string())
     } else {
-        anyhow::bail!("Could not parse digest from inspect output: {}", output_str)
+        anyhow::bail!("Could not parse digest from inspect output: {output_str}")
     }
 }
