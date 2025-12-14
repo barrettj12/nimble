@@ -30,7 +30,6 @@ impl RunMode {
 }
 
 /// AgentConfig holds the config for the agent.
-#[derive(Clone)]
 pub struct AgentConfig {
     // run_mode determines if the agent is running in dev or prod mode.
     run_mode: RunMode,
@@ -40,9 +39,11 @@ pub struct AgentConfig {
 
 impl AgentConfig {
     pub fn new() -> Self {
+        let data_dir = std::env::var("NIMBLE_DATA_DIR").ok().map(PathBuf::from);
+
         Self {
             run_mode: RunMode::from_env(),
-            data_dir: None,
+            data_dir: data_dir,
         }
     }
 
