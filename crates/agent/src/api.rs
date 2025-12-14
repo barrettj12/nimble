@@ -1,9 +1,12 @@
 use crate::state::AgentState;
+use crate::workers::BuildJob;
+use crate::workers::build::BuildStatus;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::{Json, body::Bytes, extract::State, http::StatusCode};
 use axum::{Router, routing::get};
 use serde::Serialize;
+use tokio::sync::mpsc::error::TrySendError;
 use uuid::Uuid;
 
 // TODO: move this into AgentConfig
@@ -29,7 +32,7 @@ async fn list_builds() {}
 #[derive(Serialize)]
 struct CreateBuildResponse {
     build_id: String,
-    pub status: String,
+    status: BuildStatus,
 }
 
 async fn create_build(
@@ -46,11 +49,18 @@ async fn create_build(
         .await
         .map_err(ApiError::Internal)?;
 
-    // TODO: add build to queue
+    // Add build to queue
+    let job = BuildJob { build_id };
+    state.build_queue.try_send(job).map_err(|e| match e {
+        TrySendError::Full(_) => {
+            ApiError::ServiceUnavailable("build queue is full, please try again later".to_string())
+        }
+        TrySendError::Closed(_) => ApiError::Internal(anyhow::anyhow!("build queue is closed")),
+    })?;
 
     let resp = CreateBuildResponse {
         build_id: build_id.to_string(),
-        status: "queued".into(),
+        status: BuildStatus::Queued,
     };
     Ok(Json(resp))
 }
@@ -65,6 +75,7 @@ pub enum ApiError {
     NotFound,
     BadRequest(String),
     Internal(anyhow::Error),
+    ServiceUnavailable(String),
 }
 
 #[derive(Serialize)]
@@ -97,6 +108,12 @@ impl IntoResponse for ApiError {
                 )
                     .into_response()
             }
+
+            ApiError::ServiceUnavailable(msg) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponse { error: msg }),
+            )
+                .into_response(),
         }
     }
 }

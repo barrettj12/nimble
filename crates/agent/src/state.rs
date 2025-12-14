@@ -3,22 +3,23 @@ use crate::workers::BuildJob;
 use anyhow::Context;
 use anyhow::Result;
 use axum::body::Bytes;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::{fs::File, io::AsyncWriteExt};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AgentState {
-    config: AgentConfig,
+    config: Arc<AgentConfig>,
     pub build_queue: Sender<BuildJob>,
     // TODO: add database connection
 }
 
 impl AgentState {
-    pub fn new(build_queue: Sender<BuildJob>) -> Self {
+    pub fn new(config: Arc<AgentConfig>, build_queue: Sender<BuildJob>) -> Self {
         Self {
-            config: AgentConfig::new(),
-            build_queue: build_queue,
+            config,
+            build_queue,
         }
     }
 

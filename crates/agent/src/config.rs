@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-
 use uuid::Uuid;
 
 /// RunMode tells the agent whether it is running in a development or production environment.
@@ -66,9 +65,9 @@ impl AgentConfig {
 
     // Return the paths helper.
     pub fn paths(&self) -> Paths {
-        return Paths {
+        Paths {
             base_dir: self.get_data_dir(),
-        };
+        }
     }
 }
 
@@ -83,6 +82,14 @@ impl Paths {
         self.base_dir
             .join("artifacts")
             .join("source")
-            .join(format!("{}.tar.gz", build_id))
+            .join(format!("{build_id}.tar.gz"))
+    }
+
+    // Returns the path to an unzipped source archive / build in progress.
+    pub fn build_dir(&self, build_id: Uuid) -> PathBuf {
+        self.base_dir
+            .join("build")
+            .join(build_id.to_string())
+            .join("workspace")
     }
 }
