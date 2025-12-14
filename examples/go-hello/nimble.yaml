@@ -1,2 +1,2 @@
-builder: go
+builder: dockerfile
 deploy: local:docker

@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use nimble_core::{builders::select_builder, config::NimbleConfig};
 use serde::{Deserialize, Serialize};
 use tar::Archive;
 use tokio::{fs::create_dir_all, sync::mpsc::Receiver, task::spawn_blocking};
@@ -99,12 +100,46 @@ impl BuildWorker {
             .await
             .with_context(|| format!("extracting archive {}", source_archive_path.display()))?;
 
-        // TODO: Detect project type (Go, Node, etc.) and select appropriate builder
-        // TODO: Run the build process
-        // TODO: Save build artifacts
-        // TODO: Update build status in database
+        // Check for nimble.yaml file
+        let nimble_yaml_path = build_dir.join("nimble.yaml");
+        let has_nimble_yaml = tokio::fs::try_exists(&nimble_yaml_path)
+            .await
+            .with_context(|| format!("checking for nimble.yaml in {}", build_dir.display()))?;
 
-        info!(build_id = %job.build_id, "Build completed successfully");
+        if !has_nimble_yaml {
+            anyhow::bail!(
+                "Cannot detect build type: nimble.yaml not found in build directory {}",
+                build_dir.display()
+            );
+
+            // TODO: try auto-detecting the builder type
+            // TODO: set build as failed in DB
+        }
+
+        let cfg = NimbleConfig::from_file(nimble_yaml_path)?;
+        let builder = select_builder(cfg.builder_type);
+
+        let image_name = format!("nimble-build-{}", job.build_id);
+        let image_tag = "latest";
+
+        let image = builder
+            .build(&build_dir, &image_name, image_tag)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to build image for build_id {} using builder {:?}",
+                    job.build_id, cfg.builder_type
+                )
+            })?;
+
+        info!(
+            build_id = %job.build_id,
+            image_reference = %image.reference,
+            image_digest = ?image.digest,
+            "Build completed successfully"
+        );
+        // TODO: update image info in DB
+
         Ok(())
     }
 

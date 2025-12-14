@@ -8,6 +8,7 @@ license = "MIT"
 anyhow = "1.0.100"
 axum = { version = "0.7", features = ["macros"] }
 flate2 = "1.1.5"
+nimble-core = { path = "../core" }
 serde = { version = "1.0.228", features = ["serde_derive"] }
 tar = "0.4.44"
 tokio = { version = "1", features = ["full"] }
