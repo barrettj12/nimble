@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
+use sqlx::SqlitePool;
 use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Sender};
 use uuid::Uuid;
 
@@ -11,14 +12,19 @@ use crate::{config::AgentConfig, workers::build::BuildJob};
 pub struct AgentState {
     config: Arc<AgentConfig>,
     pub build_queue: Sender<BuildJob>,
-    // TODO: add database connection
+    pub db: SqlitePool,
 }
 
 impl AgentState {
-    pub fn new(config: Arc<AgentConfig>, build_queue: Sender<BuildJob>) -> Self {
+    pub async fn new(
+        config: Arc<AgentConfig>,
+        build_queue: Sender<BuildJob>,
+        db: SqlitePool,
+    ) -> Self {
         Self {
             config,
             build_queue,
+            db,
         }
     }
 

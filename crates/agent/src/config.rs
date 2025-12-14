@@ -94,4 +94,9 @@ impl Paths {
             .join(build_id.to_string())
             .join("workspace")
     }
+
+    // Returns the path to the SQLite database file.
+    pub fn database(&self) -> PathBuf {
+        self.base_dir.join("db").join("nimble.db")
+    }
 }

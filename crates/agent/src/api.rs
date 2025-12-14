@@ -11,6 +11,7 @@ use tokio::sync::mpsc::error::TrySendError;
 use uuid::Uuid;
 
 use crate::{
+    db,
     state::AgentState,
     workers::build::{BuildJob, BuildStatus},
 };
@@ -63,6 +64,11 @@ async fn create_build(
         }
         TrySendError::Closed(_) => ApiError::Internal(anyhow::anyhow!("build queue is closed")),
     })?;
+
+    // Record build in database as queued
+    db::create_build(&state.db, build_id, BuildStatus::Queued)
+        .await
+        .map_err(ApiError::Internal)?;
 
     let resp = CreateBuildResponse {
         build_id: build_id.to_string(),

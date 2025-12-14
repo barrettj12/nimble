@@ -8,12 +8,13 @@ use std::{
 use anyhow::{Context, Result};
 use nimble_core::{builders::select_builder, config::NimbleConfig};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use tar::Archive;
 use tokio::{fs::create_dir_all, sync::mpsc::Receiver, task::spawn_blocking};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::config::AgentConfig;
+use crate::{config::AgentConfig, db};
 
 pub struct BuildJob {
     pub build_id: Uuid,
@@ -61,11 +62,12 @@ impl FromStr for BuildStatus {
 
 pub struct BuildWorker {
     config: Arc<AgentConfig>,
+    db: SqlitePool,
 }
 
 impl BuildWorker {
-    pub fn new(config: Arc<AgentConfig>) -> Self {
-        Self { config }
+    pub fn new(config: Arc<AgentConfig>, db: SqlitePool) -> Self {
+        Self { config, db }
     }
 
     /// Runs the build worker, processing build jobs from the channel.
@@ -87,6 +89,11 @@ impl BuildWorker {
     }
 
     async fn process_build(&self, job: BuildJob) -> Result<()> {
+        // Update status to Building
+        db::update_build_status(&self.db, job.build_id, BuildStatus::Building)
+            .await
+            .context("Failed to update build status to building")?;
+
         let source_archive_path = self.config.paths().source_archive(job.build_id);
         let build_dir = self.config.paths().build_dir(job.build_id);
 
@@ -107,13 +114,14 @@ impl BuildWorker {
             .with_context(|| format!("checking for nimble.yaml in {}", build_dir.display()))?;
 
         if !has_nimble_yaml {
+            // TODO: try auto-detecting the builder type
+
+            // Update status to Failed
+            let _ = db::update_build_status(&self.db, job.build_id, BuildStatus::Failed).await;
             anyhow::bail!(
                 "Cannot detect build type: nimble.yaml not found in build directory {}",
                 build_dir.display()
             );
-
-            // TODO: try auto-detecting the builder type
-            // TODO: set build as failed in DB
         }
 
         let cfg = NimbleConfig::from_file(nimble_yaml_path)?;
@@ -130,6 +138,15 @@ impl BuildWorker {
                     "failed to build image for build_id {} using builder {:?}",
                     job.build_id, cfg.builder_type
                 )
+            })
+            .map_err(|e| {
+                // Update status to Failed on error
+                let db = self.db.clone();
+                let build_id = job.build_id;
+                tokio::spawn(async move {
+                    let _ = db::update_build_status(&db, build_id, BuildStatus::Failed).await;
+                });
+                e
             })?;
 
         info!(
@@ -138,6 +155,12 @@ impl BuildWorker {
             image_digest = ?image.digest,
             "Build completed successfully"
         );
+
+        // Update status to Success
+        db::update_build_status(&self.db, job.build_id, BuildStatus::Success)
+            .await
+            .context("Failed to update build status to success")?;
+
         // TODO: update image info in DB
 
         Ok(())
