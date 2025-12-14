@@ -69,7 +69,7 @@ async fn list_builds(
     let status_filter = if let Some(status_str) = params.status {
         Some(
             BuildStatus::from_str(&status_str)
-                .map_err(|e| ApiError::BadRequest(format!("Invalid status: {}", e)))?,
+                .map_err(|e| ApiError::BadRequest(format!("Invalid status: {e}")))?,
         )
     } else {
         None
@@ -98,6 +98,8 @@ async fn create_build(
     let build_id = Uuid::new_v4();
 
     // Body contains zipped source code - need to save this to disk
+    // TODO: we should check early that the file format is correct (tgz)
+    // and return BadRequest if not.
     state
         .save_archive(build_id, body)
         .await
@@ -129,7 +131,7 @@ async fn get_build(
     Path(id): Path<String>,
 ) -> Result<Json<BuildResponse>, ApiError> {
     let build_id = Uuid::parse_str(&id)
-        .map_err(|_| ApiError::BadRequest(format!("Invalid build ID: {}", id)))?;
+        .map_err(|_| ApiError::BadRequest(format!("Invalid build ID: {id}")))?;
 
     let build = db::get_build(&state.db, build_id)
         .await
