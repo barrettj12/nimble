@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,9 @@ pub enum BuilderType {
     Go,
 }
 
-impl BuilderType {
+impl FromStr for BuilderType {
+    type Err = ConfigError;
+
     /// Parses a BuilderType from a string.
     ///
     /// # Arguments
@@ -22,7 +24,7 @@ impl BuilderType {
     /// # Errors
     ///
     /// Returns an error if the string doesn't match any known builder type.
-    pub fn from_str(s: &str) -> Result<Self, ConfigError> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "dockerfile" => Ok(BuilderType::Dockerfile),
             "go" => Ok(BuilderType::Go),
@@ -53,17 +55,12 @@ impl NimbleConfig {
 
         Self::from_str(&contents)
     }
+}
 
-    /// Parses a NimbleConfig from a YAML string.
-    ///
-    /// # Arguments
-    ///
-    /// * `yaml` - YAML string content
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the YAML cannot be parsed.
-    pub fn from_str(yaml: &str) -> Result<Self, ConfigError> {
+impl FromStr for NimbleConfig {
+    type Err = ConfigError;
+
+    fn from_str(yaml: &str) -> Result<Self, Self::Err> {
         let raw: serde_yaml::Value =
             serde_yaml::from_str(yaml).map_err(|e| ConfigError::ParseError(e.to_string()))?;
 

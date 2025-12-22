@@ -139,14 +139,13 @@ impl BuildWorker {
                     job.build_id, cfg.builder_type
                 )
             })
-            .map_err(|e| {
+            .inspect_err(|_| {
                 // Update status to Failed on error
                 let db = self.db.clone();
                 let build_id = job.build_id;
                 tokio::spawn(async move {
                     let _ = db::update_build_status(&db, build_id, BuildStatus::Failed).await;
                 });
-                e
             })?;
 
         info!(
