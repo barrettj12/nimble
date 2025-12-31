@@ -6,10 +6,10 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use reqwest::StatusCode;
 use serde::Deserialize;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 use tokio::{process::Command as TokioCommand, time::sleep};
 
 const AGENT_PORT: u16 = 7080;
@@ -78,10 +78,7 @@ fn spawn_agent(data_dir: &TempDir) -> Result<Child> {
     ensure_binaries_built()?;
 
     let binary = binary_path("nimbled")?;
-    println!(
-        "Launching agent binary at {}",
-        binary.display(),
-    );
+    println!("Launching agent binary at {}", binary.display(),);
     StdCommand::new(binary)
         .env("NIMBLE_DEV_MODE", "1")
         .env("NIMBLE_DATA_DIR", data_dir.path())
@@ -189,9 +186,10 @@ async fn cleanup_image(build_id: &str) -> Result<()> {
 }
 
 fn extract_build_id(output: &str) -> Option<String> {
-    output
-        .lines()
-        .find_map(|line| line.strip_prefix("Build ID: ").map(|id| id.trim().to_string()))
+    output.lines().find_map(|line| {
+        line.strip_prefix("Build ID: ")
+            .map(|id| id.trim().to_string())
+    })
 }
 
 fn workspace_root() -> Result<PathBuf> {
@@ -247,7 +245,9 @@ fn ensure_binaries_built() -> Result<()> {
             bail!("cargo build -p nimble-agent -p nimble failed with {status}");
         }
     });
-    res.as_ref().map(|_| ()).map_err(|e| anyhow::anyhow!(e.to_string()))
+    res.as_ref()
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 struct ChildGuard {
