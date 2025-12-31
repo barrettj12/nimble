@@ -13,6 +13,12 @@ impl DockerBuilder {
     }
 }
 
+impl Default for DockerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Builder for DockerBuilder {
     async fn build(
