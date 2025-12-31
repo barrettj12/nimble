@@ -25,6 +25,7 @@ enum Commands {
     /// Create a new build from a directory of source files
     Deploy(deploy::DeployArgs),
     /// Manage builds
+    #[command(alias = "builds")]
     Build {
         #[command(subcommand)]
         command: BuildCommands,
