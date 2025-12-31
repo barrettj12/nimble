@@ -31,7 +31,7 @@ jobs:
         run: cargo +nightly fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --all-features -- --nocapture
+        run: cargo +stable test --workspace --all-features -- --nocapture
