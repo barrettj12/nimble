@@ -38,13 +38,26 @@ jobs:
           toolchain: stable
           components: clippy
 
+      - name: Install sccache
+        run: sudo apt-get update && sudo apt-get install -y sccache
+
+      - name: Cache sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: nimble
 
       - name: Clippy
-        run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
+        run: |
+          export RUSTC_WRAPPER=$(which sccache)
+          cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 
   build:
     runs-on: ubuntu-latest
@@ -57,13 +70,26 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install sccache
+        run: sudo apt-get update && sudo apt-get install -y sccache
+
+      - name: Cache sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: nimble
 
       - name: Build
-        run: cargo +stable build --workspace --all-features
+        run: |
+          export RUSTC_WRAPPER=$(which sccache)
+          cargo +stable build --workspace --all-features
 
   test:
     runs-on: ubuntu-latest
@@ -76,10 +102,23 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install sccache
+        run: sudo apt-get update && sudo apt-get install -y sccache
+
+      - name: Cache sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: nimble
 
       - name: Test
-        run: cargo +stable test --workspace --all-features -- --nocapture
+        run: |
+          export RUSTC_WRAPPER=$(which sccache)
+          cargo +stable test --workspace --all-features -- --nocapture
