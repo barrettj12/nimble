@@ -36,7 +36,7 @@ From end to end, a deployment looks like this:
 - On the target machine, the agent's API handler saves the tarball to disk, and places the project in the build queue.
 - The build worker picks the project off the queue, and decompresses the tarball into a working directory.
 - It selects the correct builder and runs `docker build` to build an OCI image.
-- The deployer worker then determines the deploy target and deploys the image accordingly. (yet to be implemented)
+- The deployer worker then determines the deploy target and deploys the image accordingly.
 
 ## Tech stack
 Both the agent and the CLI are built in Rust. We use:
@@ -46,10 +46,11 @@ Both the agent and the CLI are built in Rust. We use:
 
 ## Repo structure
 
-This repo consists of three crates:
+This repo consists of several crates:
 - `crates/agent`: the Nimble agent `nimbled`.
 - `crates/cmd`: the Nimble CLI `nimble`.
 - `crates/core`: common logic shared between the agent and CLI.
+- `crates/test`: end-to-end tests of the system.
 
 Other important directories include:
 - `doc`: contains reference documentation explaining the design and architecture of the system in more detail.

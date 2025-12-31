@@ -183,11 +183,29 @@ async fn verify_latest_build() -> Result<()> {
 
 async fn verify_deployed_app(build_id: &str) -> Result<()> {
     let deployment = fetch_latest_deployment(build_id).await?;
+    if deployment.build_id != build_id {
+        bail!(
+            "latest deployment build_id mismatch: expected {build_id}, got {}",
+            deployment.build_id
+        );
+    }
+    if deployment.status != "running" {
+        bail!(
+            "latest deployment not running; status is {} for deployment {}",
+            deployment.status,
+            deployment.id
+        );
+    }
+
     let address = deployment
         .address
+        .clone()
         .ok_or_else(|| anyhow::anyhow!("deployment missing address"))?;
 
-    println!("Pinging app at {} for build {}", address, build_id);
+    println!(
+        "Pinging app at {address} for build {build_id} (deployment {} image {} container {:?})",
+        deployment.id, deployment.image, deployment.container_name
+    );
 
     let client = reqwest::Client::new();
     let resp = client
