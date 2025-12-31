@@ -15,11 +15,13 @@ jobs:
       - name: Install nightly toolchain (fmt)
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly
+          toolchain: nightly-2025-12-30
           components: rustfmt
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nimble
 
       - name: Format
         run: cargo +nightly fmt --all -- --check
@@ -39,6 +41,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nimble
 
       - name: Clippy
         run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
@@ -57,6 +61,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nimble
 
       - name: Build
         run: cargo +stable build --workspace --all-features
@@ -75,6 +81,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nimble
 
       - name: Test
         run: cargo +stable test --workspace --all-features -- --nocapture
