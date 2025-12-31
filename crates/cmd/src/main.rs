@@ -4,7 +4,7 @@ mod types;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use crate::commands::{build_get, build_list, deploy};
+use crate::commands::{build_get, build_list, deploy, deployment_get, deployment_list};
 
 const DEFAULT_AGENT_URL: &str = "http://localhost:7080";
 
@@ -29,6 +29,12 @@ enum Commands {
         #[command(subcommand)]
         command: BuildCommands,
     },
+    /// Manage deployments
+    #[command(alias = "deployments")]
+    Deployment {
+        #[command(subcommand)]
+        command: DeploymentCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -37,6 +43,14 @@ enum BuildCommands {
     List(build_list::BuildListArgs),
     /// Get details about a specific build
     Get(build_get::BuildGetArgs),
+}
+
+#[derive(Subcommand)]
+enum DeploymentCommands {
+    /// List deployments
+    List(deployment_list::DeploymentListArgs),
+    /// Get a specific deployment
+    Get(deployment_get::DeploymentGetArgs),
 }
 
 #[tokio::main]
@@ -53,6 +67,14 @@ async fn main() -> Result<()> {
             }
             BuildCommands::Get(args) => {
                 build_get::execute(&cli.agent_url, args).await?;
+            }
+        },
+        Commands::Deployment { command } => match command {
+            DeploymentCommands::List(args) => {
+                deployment_list::execute(&cli.agent_url, args).await?;
+            }
+            DeploymentCommands::Get(args) => {
+                deployment_get::execute(&cli.agent_url, args).await?;
             }
         },
     }

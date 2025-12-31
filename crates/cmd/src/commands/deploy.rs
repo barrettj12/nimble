@@ -13,7 +13,7 @@ use tar::Builder;
 use tokio::time::sleep;
 use walkdir::WalkDir;
 
-use crate::types::{BuildResponse, CreateBuildResponse, ErrorResponse};
+use crate::types::{BuildResponse, CreateBuildResponse, DeploymentResponse, ErrorResponse};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -90,6 +90,7 @@ async fn wait_for_completion(agent_url: &str, build_id: &str) -> Result<()> {
                 match build.status.as_str() {
                     "success" | "succeeded" => {
                         println!("Build finished successfully.");
+                        wait_for_deployment(agent_url, build_id).await?;
                         return Ok(());
                     }
                     "failed" | "errored" => {
@@ -108,6 +109,77 @@ async fn wait_for_completion(agent_url: &str, build_id: &str) -> Result<()> {
                     error: format!("HTTP {status}"),
                 });
                 anyhow::bail!("Failed to fetch build status: {}", error.error);
+            }
+        }
+    }
+}
+
+async fn wait_for_deployment(agent_url: &str, build_id: &str) -> Result<()> {
+    println!("Waiting for deployment for build {build_id}...");
+    let client = reqwest::Client::new();
+    let mut last_reported_status: Option<String> = None;
+
+    loop {
+        let url = format!("{agent_url}/deployments?build_id={build_id}");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to poll deployment status")?;
+
+        match response.status() {
+            StatusCode::OK => {
+                let mut deployments: Vec<DeploymentResponse> = response
+                    .json()
+                    .await
+                    .context("Failed to parse deployment status")?;
+
+                if deployments.is_empty() {
+                    println!("Deployment record not created yet; waiting...");
+                    sleep(POLL_INTERVAL).await;
+                    continue;
+                }
+
+                // Most recent first
+                let deployment = deployments.remove(0);
+
+                if last_reported_status.as_deref() != Some(deployment.status.as_str()) {
+                    println!("Deployment status: {}", deployment.status);
+                    last_reported_status = Some(deployment.status.clone());
+                }
+
+                match deployment.status.as_str() {
+                    "running" => {
+                        if let Some(container_name) = &deployment.container_name {
+                            println!("Container: {}", container_name);
+                        }
+                        if let Some(container_id) = &deployment.container_id {
+                            println!("Container ID: {}", container_id);
+                        }
+                        println!("Deployment started successfully.");
+                        return Ok(());
+                    }
+                    "failed" | "errored" => {
+                        anyhow::bail!(
+                            "Deployment failed for build {} (deployment {}): {}",
+                            build_id,
+                            deployment.id,
+                            deployment.status
+                        );
+                    }
+                    _ => {
+                        sleep(POLL_INTERVAL).await;
+                    }
+                }
+            }
+            StatusCode::NOT_FOUND => {
+                anyhow::bail!("Deployment not found for build {build_id}");
+            }
+            status => {
+                let error: ErrorResponse = response.json().await.unwrap_or(ErrorResponse {
+                    error: format!("HTTP {status}"),
+                });
+                anyhow::bail!("Failed to fetch deployment status: {}", error.error);
             }
         }
     }

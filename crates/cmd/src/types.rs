@@ -14,6 +14,18 @@ pub struct CreateBuildResponse {
     pub status: String,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct DeploymentResponse {
+    pub id: String,
+    pub build_id: String,
+    pub image: String,
+    pub status: String,
+    pub container_id: Option<String>,
+    pub container_name: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Deserialize)]
 pub struct ErrorResponse {
     pub error: String,

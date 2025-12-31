@@ -9,14 +9,23 @@ use anyhow::{Context, Result};
 use nimble_core::{builders::select_builder, config::NimbleConfig};
 use serde::{Deserialize, Serialize};
 use tar::Archive;
-use tokio::{fs::create_dir_all, sync::mpsc::Receiver, task::spawn_blocking};
+use tokio::{
+    fs::create_dir_all,
+    sync::mpsc::{Receiver, Sender},
+    task::spawn_blocking,
+};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{config::AgentConfig, db::Database};
+use crate::{
+    config::AgentConfig,
+    db::Database,
+    workers::deploy::{DeployJob, DeployStatus},
+};
 
 pub struct BuildJob {
     pub build_id: Uuid,
+    pub deploy: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,11 +71,16 @@ impl FromStr for BuildStatus {
 pub struct BuildWorker {
     config: Arc<AgentConfig>,
     db: Database,
+    deploy_queue: Sender<DeployJob>,
 }
 
 impl BuildWorker {
-    pub fn new(config: Arc<AgentConfig>, db: Database) -> Self {
-        Self { config, db }
+    pub fn new(config: Arc<AgentConfig>, db: Database, deploy_queue: Sender<DeployJob>) -> Self {
+        Self {
+            config,
+            db,
+            deploy_queue,
+        }
     }
 
     /// Runs the build worker, processing build jobs from the channel.
@@ -75,7 +89,11 @@ impl BuildWorker {
 
         while let Some(job) = build_queue.recv().await {
             let build_id = job.build_id;
-            info!(build_id = %build_id, "Processing build job");
+            info!(
+                build_id = %build_id,
+                deploy = job.deploy,
+                "Processing build job"
+            );
 
             if let Err(e) = self.process_build(job).await {
                 error!(build_id = %build_id, error = %e, "Build failed");
@@ -165,6 +183,29 @@ impl BuildWorker {
             .context("Failed to update build status to success")?;
 
         // TODO: update image info in DB
+
+        if job.deploy {
+            let deploy_id = Uuid::new_v4();
+            self.db
+                .create_deployment(
+                    deploy_id,
+                    job.build_id,
+                    &image.reference,
+                    DeployStatus::Queued,
+                )
+                .await
+                .context("Failed to create deployment record")?;
+
+            // Queue deployment job
+            self.deploy_queue
+                .send(DeployJob {
+                    deploy_id,
+                    build_id: job.build_id,
+                    image_reference: image.reference.clone(),
+                })
+                .await
+                .context("Failed to enqueue deployment job")?;
+        }
 
         Ok(())
     }

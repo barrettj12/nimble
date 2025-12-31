@@ -12,7 +12,10 @@ use crate::{
     config::AgentConfig,
     db::Database,
     state::ApiState,
-    workers::build::{BuildJob, BuildWorker},
+    workers::{
+        build::{BuildJob, BuildWorker},
+        deploy::{DeployJob, DeployWorker},
+    },
 };
 
 #[tokio::main]
@@ -39,16 +42,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create build queue
     let (build_sender, build_receiver) = tokio::sync::mpsc::channel::<BuildJob>(100);
+    let (deploy_sender, deploy_receiver) = tokio::sync::mpsc::channel::<DeployJob>(100);
 
     // Create and spawn build worker
-    let worker = BuildWorker::new(Arc::clone(&config), db.clone());
+    let worker = BuildWorker::new(Arc::clone(&config), db.clone(), deploy_sender);
     tokio::spawn(async move {
         if let Err(e) = worker.run(build_receiver).await {
             eprintln!("Build worker error: {e}");
         }
     });
 
-    let api_state = ApiState::new(Arc::clone(&config), build_sender, db.clone()).await;
+    // Create and spawn deploy worker
+    let deploy_worker = DeployWorker::new(db.clone());
+    tokio::spawn(async move {
+        if let Err(e) = deploy_worker.run(deploy_receiver).await {
+            eprintln!("Deploy worker error: {e}");
+        }
+    });
+
+    let api_state = ApiState::new(Arc::clone(&config), build_sender, db).await;
     start_api(api_state).await?;
     Ok(())
 }

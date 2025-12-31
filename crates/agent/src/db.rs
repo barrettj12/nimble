@@ -7,7 +7,7 @@ use sqlx::{
 };
 use uuid::Uuid;
 
-use crate::workers::build::BuildStatus;
+use crate::workers::{build::BuildStatus, deploy::DeployStatus};
 
 /// Lightweight wrapper around the SQLx pool to encapsulate DB access.
 #[derive(Clone)]
@@ -70,6 +70,77 @@ impl Database {
         .execute(&self.pool)
         .await
         .context("Failed to update build status")?;
+
+        Ok(())
+    }
+
+    /// Insert a new deployment record.
+    pub async fn create_deployment(
+        &self,
+        deploy_id: Uuid,
+        build_id: Uuid,
+        image_reference: &str,
+        status: DeployStatus,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO deployments (id, build_id, image, status)
+            VALUES (?1, ?2, ?3, ?4)
+            "#,
+        )
+        .bind(deploy_id.to_string())
+        .bind(build_id.to_string())
+        .bind(image_reference)
+        .bind(status.as_str())
+        .execute(&self.pool)
+        .await
+        .context("Failed to insert deployment record")?;
+
+        Ok(())
+    }
+
+    /// Update deployment status.
+    pub async fn update_deployment_status(
+        &self,
+        deploy_id: Uuid,
+        status: DeployStatus,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE deployments
+            SET status = ?1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?2
+            "#,
+        )
+        .bind(status.as_str())
+        .bind(deploy_id.to_string())
+        .execute(&self.pool)
+        .await
+        .context("Failed to update deployment status")?;
+
+        Ok(())
+    }
+
+    /// Store container details for a deployment.
+    pub async fn set_deployment_container(
+        &self,
+        deploy_id: Uuid,
+        container_id: &str,
+        container_name: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE deployments
+            SET container_id = ?1, container_name = ?2, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?3
+            "#,
+        )
+        .bind(container_id)
+        .bind(container_name)
+        .bind(deploy_id.to_string())
+        .execute(&self.pool)
+        .await
+        .context("Failed to record deployment container details")?;
 
         Ok(())
     }
@@ -165,6 +236,42 @@ impl Database {
         .await
         .context("Failed to create builds created_at index")?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS deployments (
+                id TEXT PRIMARY KEY,
+                build_id TEXT NOT NULL,
+                image TEXT NOT NULL,
+                status TEXT NOT NULL,
+                container_id TEXT,
+                container_name TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to create deployments table")?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to create deployments status index")?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_deployments_created_at ON deployments(created_at)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to create deployments created_at index")?;
+
         Ok(())
     }
 }
@@ -198,5 +305,102 @@ impl TryFrom<BuildRecordRow> for BuildRecord {
             created_at: row.created_at,
             updated_at: row.updated_at,
         })
+    }
+}
+
+/// Deployment record.
+#[derive(Debug)]
+pub struct DeploymentRecord {
+    pub id: Uuid,
+    pub build_id: Uuid,
+    pub image: String,
+    pub status: DeployStatus,
+    pub container_id: Option<String>,
+    pub container_name: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// Internal struct for SQLite row deserialization
+#[derive(Debug, sqlx::FromRow)]
+struct DeploymentRecordRow {
+    id: String,
+    build_id: String,
+    image: String,
+    status: String,
+    container_id: Option<String>,
+    container_name: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl TryFrom<DeploymentRecordRow> for DeploymentRecord {
+    type Error = anyhow::Error;
+
+    fn try_from(row: DeploymentRecordRow) -> Result<Self> {
+        Ok(DeploymentRecord {
+            id: Uuid::parse_str(&row.id).context("Failed to parse deployment ID as UUID")?,
+            build_id: Uuid::parse_str(&row.build_id)
+                .context("Failed to parse deployment build ID as UUID")?,
+            image: row.image,
+            status: DeployStatus::from_str(&row.status)
+                .map_err(|e| anyhow::anyhow!("Failed to parse deployment status: {e}"))?,
+            container_id: row.container_id,
+            container_name: row.container_name,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+    }
+}
+
+impl Database {
+    /// Fetch a deployment by ID.
+    pub async fn get_deployment(&self, deploy_id: Uuid) -> Result<Option<DeploymentRecord>> {
+        let deployment = sqlx::query_as::<_, DeploymentRecordRow>(
+            r#"
+            SELECT id, build_id, image, status, container_id, container_name, created_at, updated_at
+            FROM deployments
+            WHERE id = ?1
+            "#,
+        )
+        .bind(deploy_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch deployment record")?;
+
+        deployment.map(DeploymentRecord::try_from).transpose()
+    }
+
+    /// List deployments, optionally filtered by build_id.
+    pub async fn list_deployments(&self, build_id: Option<Uuid>) -> Result<Vec<DeploymentRecord>> {
+        let mut query = String::from(
+            r#"
+            SELECT id, build_id, image, status, container_id, container_name, created_at, updated_at
+            FROM deployments
+            "#,
+        );
+
+        if build_id.is_some() {
+            query.push_str(" WHERE build_id = ?1");
+        }
+
+        query.push_str(" ORDER BY created_at DESC");
+
+        let deployments = if let Some(build_id) = build_id {
+            sqlx::query_as::<_, DeploymentRecordRow>(&query)
+                .bind(build_id.to_string())
+                .fetch_all(&self.pool)
+                .await
+        } else {
+            sqlx::query_as::<_, DeploymentRecordRow>(&query)
+                .fetch_all(&self.pool)
+                .await
+        }
+        .context("Failed to fetch deployment records")?;
+
+        deployments
+            .into_iter()
+            .map(DeploymentRecord::try_from)
+            .collect::<Result<Vec<_>>>()
     }
 }
