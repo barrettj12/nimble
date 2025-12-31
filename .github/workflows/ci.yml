@@ -2,21 +2,15 @@ name: CI
 
 on:
   push:
-    branches: main
+    branches: [main]
   pull_request:
 
 jobs:
-  lint-and-test:
+  format:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install stable toolchain (clippy)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: clippy
 
       - name: Install nightly toolchain (fmt)
         uses: dtolnay/rust-toolchain@master
@@ -30,8 +24,57 @@ jobs:
       - name: Format
         run: cargo +nightly fmt --all -- --check
 
+  lint:
+    runs-on: ubuntu-latest
+    needs: format
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain (clippy)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
       - name: Clippy
         run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
+
+  build:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo +stable build --workspace --all-features
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
       - name: Test
         run: cargo +stable test --workspace --all-features -- --nocapture
