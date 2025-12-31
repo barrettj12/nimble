@@ -150,6 +150,9 @@ async fn wait_for_deployment(agent_url: &str, build_id: &str) -> Result<()> {
 
                 match deployment.status.as_str() {
                     "running" => {
+                        if let Some(address) = &deployment.address {
+                            println!("Address: {}", address);
+                        }
                         if let Some(container_name) = &deployment.container_name {
                             println!("Container: {}", container_name);
                         }
@@ -166,6 +169,9 @@ async fn wait_for_deployment(agent_url: &str, build_id: &str) -> Result<()> {
                             deployment.id,
                             deployment.status
                         );
+                    }
+                    "deploying" => {
+                        sleep(POLL_INTERVAL).await;
                     }
                     _ => {
                         sleep(POLL_INTERVAL).await;

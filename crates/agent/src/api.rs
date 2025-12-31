@@ -174,6 +174,7 @@ struct DeploymentResponse {
     status: DeployStatus,
     container_id: Option<String>,
     container_name: Option<String>,
+    address: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -187,6 +188,7 @@ impl From<DeploymentRecord> for DeploymentResponse {
             status: record.status,
             container_id: record.container_id,
             container_name: record.container_name,
+            address: record.address,
             created_at: record.created_at,
             updated_at: record.updated_at,
         }

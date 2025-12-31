@@ -2,7 +2,7 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
 use sqlx::{
-    ConnectOptions,
+    ConnectOptions, Row,
     sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
 };
 use uuid::Uuid;
@@ -81,17 +81,19 @@ impl Database {
         build_id: Uuid,
         image_reference: &str,
         status: DeployStatus,
+        address: Option<&str>,
     ) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO deployments (id, build_id, image, status)
-            VALUES (?1, ?2, ?3, ?4)
+            INSERT INTO deployments (id, build_id, image, status, address)
+            VALUES (?1, ?2, ?3, ?4, ?5)
             "#,
         )
         .bind(deploy_id.to_string())
         .bind(build_id.to_string())
         .bind(image_reference)
         .bind(status.as_str())
+        .bind(address)
         .execute(&self.pool)
         .await
         .context("Failed to insert deployment record")?;
@@ -127,16 +129,18 @@ impl Database {
         deploy_id: Uuid,
         container_id: &str,
         container_name: &str,
+        address: Option<&str>,
     ) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE deployments
-            SET container_id = ?1, container_name = ?2, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?3
+            SET container_id = ?1, container_name = ?2, address = ?3, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?4
             "#,
         )
         .bind(container_id)
         .bind(container_name)
+        .bind(address)
         .bind(deploy_id.to_string())
         .execute(&self.pool)
         .await
@@ -245,6 +249,7 @@ impl Database {
                 status TEXT NOT NULL,
                 container_id TEXT,
                 container_name TEXT,
+                address TEXT,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -271,6 +276,21 @@ impl Database {
         .execute(&self.pool)
         .await
         .context("Failed to create deployments created_at index")?;
+
+        // Add address column if missing (SQLite lacks IF NOT EXISTS)
+        if !self
+            .deployment_column_exists("address")
+            .await
+            .context("Failed to inspect deployments table for address column")?
+        {
+            let _ = sqlx::query(
+                r#"
+                ALTER TABLE deployments ADD COLUMN address TEXT
+                "#,
+            )
+            .execute(&self.pool)
+            .await;
+        }
 
         Ok(())
     }
@@ -317,6 +337,7 @@ pub struct DeploymentRecord {
     pub status: DeployStatus,
     pub container_id: Option<String>,
     pub container_name: Option<String>,
+    pub address: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -330,6 +351,7 @@ struct DeploymentRecordRow {
     status: String,
     container_id: Option<String>,
     container_name: Option<String>,
+    address: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -347,6 +369,7 @@ impl TryFrom<DeploymentRecordRow> for DeploymentRecord {
                 .map_err(|e| anyhow::anyhow!("Failed to parse deployment status: {e}"))?,
             container_id: row.container_id,
             container_name: row.container_name,
+            address: row.address,
             created_at: row.created_at,
             updated_at: row.updated_at,
         })
@@ -358,7 +381,7 @@ impl Database {
     pub async fn get_deployment(&self, deploy_id: Uuid) -> Result<Option<DeploymentRecord>> {
         let deployment = sqlx::query_as::<_, DeploymentRecordRow>(
             r#"
-            SELECT id, build_id, image, status, container_id, container_name, created_at, updated_at
+            SELECT id, build_id, image, status, container_id, container_name, address, created_at, updated_at
             FROM deployments
             WHERE id = ?1
             "#,
@@ -375,7 +398,7 @@ impl Database {
     pub async fn list_deployments(&self, build_id: Option<Uuid>) -> Result<Vec<DeploymentRecord>> {
         let mut query = String::from(
             r#"
-            SELECT id, build_id, image, status, container_id, container_name, created_at, updated_at
+            SELECT id, build_id, image, status, container_id, container_name, address, created_at, updated_at
             FROM deployments
             "#,
         );
@@ -402,5 +425,25 @@ impl Database {
             .into_iter()
             .map(DeploymentRecord::try_from)
             .collect::<Result<Vec<_>>>()
+    }
+
+    async fn deployment_column_exists(&self, column_name: &str) -> Result<bool> {
+        let rows = sqlx::query(
+            r#"
+            PRAGMA table_info('deployments')
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to inspect deployments table")?;
+
+        for row in rows {
+            let name: String = row.try_get("name")?;
+            if name == column_name {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }

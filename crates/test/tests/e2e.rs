@@ -20,6 +20,16 @@ struct BuildResponse {
     status: String,
 }
 
+#[derive(Deserialize, Debug)]
+struct DeploymentResponse {
+    id: String,
+    status: String,
+    image: String,
+    build_id: String,
+    container_name: Option<String>,
+    address: Option<String>,
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deploys_example_app() -> Result<()> {
     println!("Starting nimble e2e test");
@@ -41,6 +51,11 @@ async fn deploys_example_app() -> Result<()> {
     let build_id = extract_build_id(&cli_output);
 
     verify_latest_build().await?;
+
+    if let Some(build_id) = &build_id {
+        println!("Verifying deployed app responds (build {build_id})");
+        verify_deployed_app(build_id).await?;
+    }
 
     if let Some(build_id) = build_id {
         println!("Cleaning up built image for build {build_id}");
@@ -164,6 +179,52 @@ async fn verify_latest_build() -> Result<()> {
     } else {
         bail!("no successful build found; statuses: {:?}", builds)
     }
+}
+
+async fn verify_deployed_app(build_id: &str) -> Result<()> {
+    let deployment = fetch_latest_deployment(build_id).await?;
+    let address = deployment
+        .address
+        .ok_or_else(|| anyhow::anyhow!("deployment missing address"))?;
+
+    println!("Pinging app at {} for build {}", address, build_id);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&address)
+        .send()
+        .await
+        .context("request deployed app")?
+        .error_for_status()
+        .context("deployed app returned error")?;
+
+    let body = resp.text().await.context("read deployed app body")?;
+    if !body.contains("Hello, World!") {
+        bail!("unexpected app response: {body}");
+    }
+
+    println!("App responded successfully: {}", body.trim());
+    Ok(())
+}
+
+async fn fetch_latest_deployment(build_id: &str) -> Result<DeploymentResponse> {
+    let client = reqwest::Client::new();
+    let url = format!("{AGENT_URL}/deployments?build_id={build_id}");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .context("request deployment list")?
+        .error_for_status()
+        .context("deployment list returned error")?;
+
+    let mut deployments: Vec<DeploymentResponse> =
+        resp.json().await.context("decode deployment list")?;
+
+    deployments
+        .drain(..)
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no deployment found for build {build_id}"))
 }
 
 async fn cleanup_image(build_id: &str) -> Result<()> {

@@ -1,2 +1,3 @@
 builder: dockerfile
 deploy: local:docker
+port: 8080

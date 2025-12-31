@@ -12,6 +12,7 @@ pub struct DeployJob {
     pub deploy_id: Uuid,
     pub build_id: Uuid,
     pub image_reference: String,
+    pub app_port: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +91,8 @@ impl DeployWorker {
         let output = Command::new("docker")
             .arg("run")
             .arg("-d")
+            .arg("-p")
+            .arg(format!("0:{}", job.app_port)) // publish app port to a random host port
             .arg("--name")
             .arg(&container_name)
             .arg(&job.image_reference)
@@ -122,8 +125,18 @@ impl DeployWorker {
             );
         }
 
+        let host_port = self.lookup_host_port(&container_name, job.app_port).await?;
+        let address = host_port
+            .as_ref()
+            .map(|port| format!("http://127.0.0.1:{port}"));
+
         self.db
-            .set_deployment_container(job.deploy_id, &container_id, &container_name)
+            .set_deployment_container(
+                job.deploy_id,
+                &container_id,
+                &container_name,
+                address.as_deref(),
+            )
             .await
             .context("Failed to record container info")?;
 
@@ -137,9 +150,37 @@ impl DeployWorker {
             build_id = %job.build_id,
             container_id = %container_id,
             container_name = %container_name,
+            address = ?address,
             "Deployment started"
         );
 
         Ok(())
+    }
+
+    async fn lookup_host_port(
+        &self,
+        container_name: &str,
+        app_port: u16,
+    ) -> Result<Option<String>> {
+        let output = Command::new("docker")
+            .arg("port")
+            .arg(container_name)
+            .arg(format!("{app_port}/tcp"))
+            .output()
+            .await
+            .context("Failed to query docker port mapping")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("docker port failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let host_port = stdout.lines().find_map(|line| {
+            line.rsplit_once(':')
+                .map(|(_, port)| port.trim().to_string())
+        });
+
+        Ok(host_port)
     }
 }

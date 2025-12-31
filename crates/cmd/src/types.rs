@@ -22,6 +22,7 @@ pub struct DeploymentResponse {
     pub status: String,
     pub container_id: Option<String>,
     pub container_name: Option<String>,
+    pub address: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -45,6 +45,9 @@ pub fn print_deployment(deployment: &DeploymentResponse) {
     println!("Build ID:      {}", deployment.build_id);
     println!("Status:        {}", deployment.status);
     println!("Image:         {}", deployment.image);
+    if let Some(address) = &deployment.address {
+        println!("Address:       {}", address);
+    }
 
     if let Some(container_id) = &deployment.container_id {
         println!("Container ID:  {}", container_id);

@@ -42,6 +42,9 @@ pub async fn execute(agent_url: &str, args: &DeploymentListArgs) -> Result<()> {
                     deployment.id, deployment.status, deployment.image
                 );
                 println!("  build: {}", deployment.build_id);
+                if let Some(address) = &deployment.address {
+                    println!("  address: {}", address);
+                }
                 if let Some(container_name) = &deployment.container_name {
                     println!("  container: {}", container_name);
                 }

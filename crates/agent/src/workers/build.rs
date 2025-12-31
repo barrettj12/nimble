@@ -147,6 +147,7 @@ impl BuildWorker {
 
         let cfg = NimbleConfig::from_file(nimble_yaml_path)?;
         let builder = select_builder(cfg.builder_type);
+        let app_port = cfg.port;
 
         let image_name = format!("nimble-build-{}", job.build_id);
         let image_tag = "latest";
@@ -192,6 +193,7 @@ impl BuildWorker {
                     job.build_id,
                     &image.reference,
                     DeployStatus::Queued,
+                    None,
                 )
                 .await
                 .context("Failed to create deployment record")?;
@@ -202,6 +204,7 @@ impl BuildWorker {
                     deploy_id,
                     build_id: job.build_id,
                     image_reference: image.reference.clone(),
+                    app_port,
                 })
                 .await
                 .context("Failed to enqueue deployment job")?;
