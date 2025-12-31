@@ -10,18 +10,25 @@ impl GoBuilder {
     }
 }
 
+impl Default for GoBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait::async_trait]
 impl Builder for GoBuilder {
     async fn build(
         &self,
-        build_path: &Path,
-        image_name: &str,
-        image_tag: &str,
+        _build_path: &Path,
+        _image_name: &str,
+        _image_tag: &str,
     ) -> anyhow::Result<Image> {
         anyhow::bail!("unimplemented")
     }
 }
 
+#[allow(dead_code)]
 const DOCKERFILE: &str = r#"
 # Stage 1: build the binary
 FROM golang:1.22-alpine AS builder

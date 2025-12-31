@@ -1,0 +1,15 @@
+[package]
+name = "nimble-test"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+anyhow = "1.0.100"
+assert_cmd = "2.0"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0.228", features = ["derive"] }
+tempfile = "3.12"
+tokio = { version = "1", features = ["full"] }
