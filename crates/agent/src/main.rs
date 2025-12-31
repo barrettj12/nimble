@@ -11,7 +11,7 @@ use crate::{
     api::start_api,
     config::AgentConfig,
     db::init_pool,
-    state::AgentState,
+    state::ApiState,
     workers::build::{BuildJob, BuildWorker},
 };
 
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let state = AgentState::new(Arc::clone(&config), build_sender, db.clone()).await;
-    start_api(state).await?;
+    let api_state = ApiState::new(Arc::clone(&config), build_sender, db.clone()).await;
+    start_api(api_state).await?;
     Ok(())
 }

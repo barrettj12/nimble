@@ -14,14 +14,14 @@ use uuid::Uuid;
 
 use crate::{
     db,
-    state::AgentState,
+    state::ApiState,
     workers::build::{BuildJob, BuildStatus},
 };
 
 // TODO: move this into AgentConfig
 const PORT: u16 = 7080;
 
-pub async fn start_api(state: AgentState) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_api(state: ApiState) -> Result<(), Box<dyn std::error::Error>> {
     // Define routes
     let app = Router::new()
         .route("/builds", get(list_builds).post(create_build))
@@ -62,7 +62,7 @@ impl From<db::BuildRecord> for BuildResponse {
 }
 
 async fn list_builds(
-    State(state): State<AgentState>,
+    State(state): State<ApiState>,
     Query(params): Query<ListBuildsQuery>,
 ) -> Result<Json<Vec<BuildResponse>>, ApiError> {
     // Parse status filter if provided
@@ -90,7 +90,7 @@ struct CreateBuildResponse {
 }
 
 async fn create_build(
-    State(state): State<AgentState>,
+    State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<CreateBuildResponse>, ApiError> {
     // TODO: check Content-Type header
@@ -127,7 +127,7 @@ async fn create_build(
 }
 
 async fn get_build(
-    State(state): State<AgentState>,
+    State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<Json<BuildResponse>, ApiError> {
     let build_id = Uuid::parse_str(&id)

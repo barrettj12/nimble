@@ -9,13 +9,13 @@ use uuid::Uuid;
 use crate::{config::AgentConfig, workers::build::BuildJob};
 
 #[derive(Clone)]
-pub struct AgentState {
+pub struct ApiState {
     config: Arc<AgentConfig>,
     pub build_queue: Sender<BuildJob>,
     pub db: SqlitePool,
 }
 
-impl AgentState {
+impl ApiState {
     pub async fn new(
         config: Arc<AgentConfig>,
         build_queue: Sender<BuildJob>,
