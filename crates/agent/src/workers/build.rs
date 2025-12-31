@@ -71,10 +71,10 @@ impl BuildWorker {
     }
 
     /// Runs the build worker, processing build jobs from the channel.
-    pub async fn run(&self, mut build_rx: Receiver<BuildJob>) -> Result<()> {
+    pub async fn run(&self, mut build_queue: Receiver<BuildJob>) -> Result<()> {
         info!("Build worker started");
 
-        while let Some(job) = build_rx.recv().await {
+        while let Some(job) = build_queue.recv().await {
             let build_id = job.build_id;
             info!(build_id = %build_id, "Processing build job");
 

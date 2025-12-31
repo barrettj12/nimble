@@ -17,9 +17,6 @@ use crate::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create build queue
-    let (build_tx, build_rx) = tokio::sync::mpsc::channel::<BuildJob>(100);
-
     let config = Arc::new(AgentConfig::new());
 
     // Make sure data dir exists
@@ -40,16 +37,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|e| format!("Failed to initialize database: {e}"))?;
 
-    let state = AgentState::new(Arc::clone(&config), build_tx, db.clone()).await;
+    // Create build queue
+    let (build_sender, build_receiver) = tokio::sync::mpsc::channel::<BuildJob>(100);
 
     // Create and spawn build worker
-    let worker = BuildWorker::new(Arc::clone(&config), db);
+    let worker = BuildWorker::new(Arc::clone(&config), db.clone());
     tokio::spawn(async move {
-        if let Err(e) = worker.run(build_rx).await {
+        if let Err(e) = worker.run(build_receiver).await {
             eprintln!("Build worker error: {e}");
         }
     });
 
+    let state = AgentState::new(Arc::clone(&config), build_sender, db.clone()).await;
     start_api(state).await?;
     Ok(())
 }
