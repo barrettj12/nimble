@@ -75,7 +75,9 @@ async fn list_builds(
         None
     };
 
-    let builds = db::list_builds(&state.db, params.limit, status_filter)
+    let builds = state
+        .db
+        .list_builds(params.limit, status_filter)
         .await
         .map_err(ApiError::Internal)?;
 
@@ -115,7 +117,9 @@ async fn create_build(
     })?;
 
     // Record build in database as queued
-    db::create_build(&state.db, build_id, BuildStatus::Queued)
+    state
+        .db
+        .create_build(build_id, BuildStatus::Queued)
         .await
         .map_err(ApiError::Internal)?;
 
@@ -133,7 +137,9 @@ async fn get_build(
     let build_id = Uuid::parse_str(&id)
         .map_err(|_| ApiError::BadRequest(format!("Invalid build ID: {id}")))?;
 
-    let build = db::get_build(&state.db, build_id)
+    let build = state
+        .db
+        .get_build(build_id)
         .await
         .map_err(ApiError::Internal)?;
 

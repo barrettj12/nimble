@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::{
     api::start_api,
     config::AgentConfig,
-    db::init_pool,
+    db::Database,
     state::ApiState,
     workers::build::{BuildJob, BuildWorker},
 };
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize database
     let database_url = format!("sqlite:{}", db_path.display());
-    let db = init_pool(&database_url)
+    let db = Database::connect(&database_url)
         .await
         .map_err(|e| format!("Failed to initialize database: {e}"))?;
 

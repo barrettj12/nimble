@@ -8,13 +8,12 @@ use std::{
 use anyhow::{Context, Result};
 use nimble_core::{builders::select_builder, config::NimbleConfig};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use tar::Archive;
 use tokio::{fs::create_dir_all, sync::mpsc::Receiver, task::spawn_blocking};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{config::AgentConfig, db};
+use crate::{config::AgentConfig, db::Database};
 
 pub struct BuildJob {
     pub build_id: Uuid,
@@ -62,11 +61,11 @@ impl FromStr for BuildStatus {
 
 pub struct BuildWorker {
     config: Arc<AgentConfig>,
-    db: SqlitePool,
+    db: Database,
 }
 
 impl BuildWorker {
-    pub fn new(config: Arc<AgentConfig>, db: SqlitePool) -> Self {
+    pub fn new(config: Arc<AgentConfig>, db: Database) -> Self {
         Self { config, db }
     }
 
@@ -90,7 +89,8 @@ impl BuildWorker {
 
     async fn process_build(&self, job: BuildJob) -> Result<()> {
         // Update status to Building
-        db::update_build_status(&self.db, job.build_id, BuildStatus::Building)
+        self.db
+            .update_build_status(job.build_id, BuildStatus::Building)
             .await
             .context("Failed to update build status to building")?;
 
@@ -117,7 +117,10 @@ impl BuildWorker {
             // TODO: try auto-detecting the builder type
 
             // Update status to Failed
-            let _ = db::update_build_status(&self.db, job.build_id, BuildStatus::Failed).await;
+            let _ = self
+                .db
+                .update_build_status(job.build_id, BuildStatus::Failed)
+                .await;
             anyhow::bail!(
                 "Cannot detect build type: nimble.yaml not found in build directory {}",
                 build_dir.display()
@@ -144,7 +147,7 @@ impl BuildWorker {
                 let db = self.db.clone();
                 let build_id = job.build_id;
                 tokio::spawn(async move {
-                    let _ = db::update_build_status(&db, build_id, BuildStatus::Failed).await;
+                    let _ = db.update_build_status(build_id, BuildStatus::Failed).await;
                 });
             })?;
 
@@ -156,7 +159,8 @@ impl BuildWorker {
         );
 
         // Update status to Success
-        db::update_build_status(&self.db, job.build_id, BuildStatus::Success)
+        self.db
+            .update_build_status(job.build_id, BuildStatus::Success)
             .await
             .context("Failed to update build status to success")?;
 

@@ -2,24 +2,23 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
-use sqlx::SqlitePool;
 use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Sender};
 use uuid::Uuid;
 
-use crate::{config::AgentConfig, workers::build::BuildJob};
+use crate::{config::AgentConfig, db::Database, workers::build::BuildJob};
 
 #[derive(Clone)]
 pub struct ApiState {
     config: Arc<AgentConfig>,
     pub build_queue: Sender<BuildJob>,
-    pub db: SqlitePool,
+    pub db: Database,
 }
 
 impl ApiState {
     pub async fn new(
         config: Arc<AgentConfig>,
         build_queue: Sender<BuildJob>,
-        db: SqlitePool,
+        db: Database,
     ) -> Self {
         Self {
             config,
