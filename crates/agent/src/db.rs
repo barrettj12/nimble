@@ -79,18 +79,20 @@ impl Database {
         &self,
         deploy_id: Uuid,
         build_id: Uuid,
+        app: &str,
         image_reference: &str,
         status: DeployStatus,
         address: Option<&str>,
     ) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO deployments (id, build_id, image, status, address)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO deployments (id, build_id, app, image, status, address)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             "#,
         )
         .bind(deploy_id.to_string())
         .bind(build_id.to_string())
+        .bind(app)
         .bind(image_reference)
         .bind(status.as_str())
         .bind(address)
@@ -99,6 +101,66 @@ impl Database {
         .context("Failed to insert deployment record")?;
 
         Ok(())
+    }
+
+    /// Ensure an app record exists.
+    pub async fn upsert_app(&self, app: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO apps (name)
+            VALUES (?1)
+            ON CONFLICT(name) DO NOTHING
+            "#,
+        )
+        .bind(app)
+        .execute(&self.pool)
+        .await
+        .context("Failed to upsert app")?;
+
+        Ok(())
+    }
+
+    /// Update the active deployment for an app.
+    pub async fn set_active_deployment(&self, app: &str, deploy_id: Option<Uuid>) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE apps
+            SET active_deployment_id = ?1, updated_at = CURRENT_TIMESTAMP
+            WHERE name = ?2
+            "#,
+        )
+        .bind(deploy_id.map(|id| id.to_string()))
+        .bind(app)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update app active deployment")?;
+
+        Ok(())
+    }
+
+    /// Get app details by name.
+    pub async fn get_app(&self, app: &str) -> Result<Option<AppRecord>> {
+        let record = sqlx::query_as::<_, AppRecordRow>(
+            r#"
+            SELECT name, active_deployment_id, created_at, updated_at
+            FROM apps
+            WHERE name = ?1
+            "#,
+        )
+        .bind(app)
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch app record")?;
+
+        record.map(AppRecord::try_from).transpose()
+    }
+
+    /// Fetch the active deployment ID for an app if present.
+    pub async fn get_active_deployment_id(&self, app: &str) -> Result<Option<Uuid>> {
+        Ok(self
+            .get_app(app)
+            .await?
+            .and_then(|app| app.active_deployment_id))
     }
 
     /// Update deployment status.
@@ -245,6 +307,7 @@ impl Database {
             CREATE TABLE IF NOT EXISTS deployments (
                 id TEXT PRIMARY KEY,
                 build_id TEXT NOT NULL,
+                app TEXT NOT NULL,
                 image TEXT NOT NULL,
                 status TEXT NOT NULL,
                 container_id TEXT,
@@ -258,6 +321,29 @@ impl Database {
         .execute(&self.pool)
         .await
         .context("Failed to create deployments table")?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS apps (
+                name TEXT PRIMARY KEY,
+                active_deployment_id TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to create apps table")?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_apps_active_deployment ON apps(active_deployment_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to create apps active_deployment index")?;
 
         sqlx::query(
             r#"
@@ -286,6 +372,29 @@ impl Database {
             let _ = sqlx::query(
                 r#"
                 ALTER TABLE deployments ADD COLUMN address TEXT
+                "#,
+            )
+            .execute(&self.pool)
+            .await;
+        }
+
+        // Add app column if missing (SQLite lacks IF NOT EXISTS)
+        if !self
+            .deployment_column_exists("app")
+            .await
+            .context("Failed to inspect deployments table for app column")?
+        {
+            let _ = sqlx::query(
+                r#"
+                ALTER TABLE deployments ADD COLUMN app TEXT
+                "#,
+            )
+            .execute(&self.pool)
+            .await;
+
+            let _ = sqlx::query(
+                r#"
+                UPDATE deployments SET app = 'unknown' WHERE app IS NULL
                 "#,
             )
             .execute(&self.pool)
@@ -328,11 +437,48 @@ impl TryFrom<BuildRecordRow> for BuildRecord {
     }
 }
 
+/// Application record.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct AppRecord {
+    pub name: String,
+    pub active_deployment_id: Option<Uuid>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// Internal struct for SQLite row deserialization
+#[derive(Debug, sqlx::FromRow)]
+struct AppRecordRow {
+    name: String,
+    active_deployment_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl TryFrom<AppRecordRow> for AppRecord {
+    type Error = anyhow::Error;
+
+    fn try_from(row: AppRecordRow) -> Result<Self> {
+        Ok(AppRecord {
+            name: row.name,
+            active_deployment_id: row
+                .active_deployment_id
+                .map(|id| Uuid::parse_str(&id))
+                .transpose()
+                .context("Failed to parse app active deployment as UUID")?,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+    }
+}
+
 /// Deployment record.
 #[derive(Debug)]
 pub struct DeploymentRecord {
     pub id: Uuid,
     pub build_id: Uuid,
+    pub app: String,
     pub image: String,
     pub status: DeployStatus,
     pub container_id: Option<String>,
@@ -347,6 +493,7 @@ pub struct DeploymentRecord {
 struct DeploymentRecordRow {
     id: String,
     build_id: String,
+    app: String,
     image: String,
     status: String,
     container_id: Option<String>,
@@ -364,6 +511,7 @@ impl TryFrom<DeploymentRecordRow> for DeploymentRecord {
             id: Uuid::parse_str(&row.id).context("Failed to parse deployment ID as UUID")?,
             build_id: Uuid::parse_str(&row.build_id)
                 .context("Failed to parse deployment build ID as UUID")?,
+            app: row.app,
             image: row.image,
             status: DeployStatus::from_str(&row.status)
                 .map_err(|e| anyhow::anyhow!("Failed to parse deployment status: {e}"))?,
@@ -381,7 +529,7 @@ impl Database {
     pub async fn get_deployment(&self, deploy_id: Uuid) -> Result<Option<DeploymentRecord>> {
         let deployment = sqlx::query_as::<_, DeploymentRecordRow>(
             r#"
-            SELECT id, build_id, image, status, container_id, container_name, address, created_at, updated_at
+            SELECT id, build_id, app, image, status, container_id, container_name, address, created_at, updated_at
             FROM deployments
             WHERE id = ?1
             "#,
@@ -398,7 +546,7 @@ impl Database {
     pub async fn list_deployments(&self, build_id: Option<Uuid>) -> Result<Vec<DeploymentRecord>> {
         let mut query = String::from(
             r#"
-            SELECT id, build_id, image, status, container_id, container_name, address, created_at, updated_at
+            SELECT id, build_id, app, image, status, container_id, container_name, address, created_at, updated_at
             FROM deployments
             "#,
         );

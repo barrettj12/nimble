@@ -170,6 +170,7 @@ struct ListDeploymentsQuery {
 struct DeploymentResponse {
     id: String,
     build_id: String,
+    app: String,
     image: String,
     status: DeployStatus,
     container_id: Option<String>,
@@ -184,6 +185,7 @@ impl From<DeploymentRecord> for DeploymentResponse {
         DeploymentResponse {
             id: record.id.to_string(),
             build_id: record.build_id.to_string(),
+            app: record.app,
             image: record.image,
             status: record.status,
             container_id: record.container_id,

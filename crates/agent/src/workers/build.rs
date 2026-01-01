@@ -148,6 +148,7 @@ impl BuildWorker {
         let cfg = NimbleConfig::from_file(nimble_yaml_path)?;
         let builder = select_builder(cfg.builder_type);
         let app_port = cfg.port;
+        let app_name = cfg.app.clone();
 
         let image_name = format!("nimble-build-{}", job.build_id);
         let image_tag = "latest";
@@ -186,11 +187,23 @@ impl BuildWorker {
         // TODO: update image info in DB
 
         if job.deploy {
+            self.db
+                .upsert_app(&app_name)
+                .await
+                .context("Failed to upsert app")?;
+
+            let previous_active_deployment = self
+                .db
+                .get_active_deployment_id(&app_name)
+                .await
+                .context("Failed to fetch existing active deployment")?;
+
             let deploy_id = Uuid::new_v4();
             self.db
                 .create_deployment(
                     deploy_id,
                     job.build_id,
+                    &app_name,
                     &image.reference,
                     DeployStatus::Queued,
                     None,
@@ -198,11 +211,18 @@ impl BuildWorker {
                 .await
                 .context("Failed to create deployment record")?;
 
+            self.db
+                .set_active_deployment(&app_name, Some(deploy_id))
+                .await
+                .context("Failed to set active deployment for app")?;
+
             // Queue deployment job
             self.deploy_queue
                 .send(DeployJob {
                     deploy_id,
                     build_id: job.build_id,
+                    app: app_name.clone(),
+                    previous_active_deployment,
                     image_reference: image.reference.clone(),
                     app_port,
                 })

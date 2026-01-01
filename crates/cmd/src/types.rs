@@ -18,6 +18,7 @@ pub struct CreateBuildResponse {
 pub struct DeploymentResponse {
     pub id: String,
     pub build_id: String,
+    pub app: String,
     pub image: String,
     pub status: String,
     pub container_id: Option<String>,

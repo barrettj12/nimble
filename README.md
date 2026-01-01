@@ -60,6 +60,17 @@ Other important directories include:
 
 Nimble projects can be configured using a `nimble.yaml` file in the project root. This is a simple key-value map which tells Nimble which builder to use, where to deploy the app, etc.
 
+Example `nimble.yaml`:
+
+```
+app: go-hello
+builder: dockerfile
+deploy: local:docker
+port: 8080
+```
+
+The `app` key identifies the logical application. Nimble ensures only one deployment is active per app by removing the previous deployment container when a new one is created.
+
 In the absence of a `nimble.yaml`, Nimble will attempt to automatically determine what builder to use to build the project. If a Dockerfile is present in the project root, it will default to using the Dockerfile builder. Otherwise, it will try to detect the language/framework of the project and use an appropriate builder.
 
 ## Development tips

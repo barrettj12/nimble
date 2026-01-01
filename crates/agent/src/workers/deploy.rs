@@ -11,6 +11,8 @@ use crate::db::Database;
 pub struct DeployJob {
     pub deploy_id: Uuid,
     pub build_id: Uuid,
+    pub app: String,
+    pub previous_active_deployment: Option<Uuid>,
     pub image_reference: String,
     pub app_port: u16,
 }
@@ -22,6 +24,7 @@ pub enum DeployStatus {
     Deploying,
     Running,
     Failed,
+    Stopped,
 }
 
 impl DeployStatus {
@@ -31,6 +34,7 @@ impl DeployStatus {
             DeployStatus::Deploying => "deploying",
             DeployStatus::Running => "running",
             DeployStatus::Failed => "failed",
+            DeployStatus::Stopped => "stopped",
         }
     }
 }
@@ -50,6 +54,7 @@ impl FromStr for DeployStatus {
             "deploying" => Ok(DeployStatus::Deploying),
             "running" => Ok(DeployStatus::Running),
             "failed" => Ok(DeployStatus::Failed),
+            "stopped" => Ok(DeployStatus::Stopped),
             _ => Err(format!("Unknown deploy status: {s}")),
         }
     }
@@ -69,7 +74,12 @@ impl DeployWorker {
 
         while let Some(job) = deploy_rx.recv().await {
             let deploy_id = job.deploy_id;
-            info!(deploy_id = %deploy_id, build_id = %job.build_id, "Processing deploy job");
+            info!(
+                deploy_id = %deploy_id,
+                build_id = %job.build_id,
+                app = %job.app,
+                "Processing deploy job"
+            );
 
             if let Err(e) = self.process_deploy(job).await {
                 error!(deploy_id = %deploy_id, error = %e, "Deployment failed");
@@ -86,6 +96,23 @@ impl DeployWorker {
             .await
             .context("Failed to update deploy status to deploying")?;
 
+        if let Some(previous) = job.previous_active_deployment {
+            match self.stop_previous_deployment(previous).await {
+                Ok(()) => info!(
+                    deploy_id = %job.deploy_id,
+                    previous_deploy_id = %previous,
+                    app = %job.app,
+                    "Removed previous deployment for app"
+                ),
+                Err(err) => error!(
+                    deploy_id = %job.deploy_id,
+                    previous_deploy_id = %previous,
+                    error = %err,
+                    "Failed to remove previous deployment"
+                ),
+            }
+        }
+
         let container_name = format!("nimble-deploy-{}", job.deploy_id);
 
         let output = Command::new("docker")
@@ -95,6 +122,10 @@ impl DeployWorker {
             .arg(format!("0:{}", job.app_port)) // publish app port to a random host port
             .arg("--name")
             .arg(&container_name)
+            .arg("--label")
+            .arg(format!("nimble.app={}", job.app))
+            .arg("--label")
+            .arg(format!("nimble.deploy_id={}", job.deploy_id))
             .arg(&job.image_reference)
             .output()
             .await
@@ -148,11 +179,47 @@ impl DeployWorker {
         info!(
             deploy_id = %job.deploy_id,
             build_id = %job.build_id,
+            app = %job.app,
             container_id = %container_id,
             container_name = %container_name,
             address = ?address,
             "Deployment started"
         );
+
+        Ok(())
+    }
+
+    async fn stop_previous_deployment(&self, deploy_id: Uuid) -> Result<()> {
+        let Some(record) = self.db.get_deployment(deploy_id).await? else {
+            return Ok(());
+        };
+
+        let container_ref = record
+            .container_name
+            .clone()
+            .or(record.container_id.clone());
+
+        if let Some(container_ref) = container_ref {
+            let output = Command::new("docker")
+                .arg("rm")
+                .arg("-f")
+                .arg(&container_ref)
+                .output()
+                .await
+                .context("Failed to remove previous deployment container")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.to_lowercase().contains("no such container") {
+                    anyhow::bail!("docker rm failed for {container_ref}: {stderr}");
+                }
+            }
+        }
+
+        self.db
+            .update_deployment_status(deploy_id, DeployStatus::Stopped)
+            .await
+            .context("Failed to mark previous deployment as stopped")?;
 
         Ok(())
     }

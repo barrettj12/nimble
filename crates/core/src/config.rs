@@ -38,6 +38,8 @@ impl FromStr for BuilderType {
 pub struct NimbleConfig {
     /// The builder type to use
     pub builder_type: BuilderType,
+    /// Logical application name for grouping deployments
+    pub app: String,
     /// Application port exposed by the built image/container. Defaults to 8080.
     #[serde(default = "default_app_port")]
     pub port: u16,
@@ -86,7 +88,18 @@ impl FromStr for NimbleConfig {
             .map(|v| v as u16)
             .unwrap_or_else(default_app_port);
 
-        Ok(NimbleConfig { builder_type, port })
+        // Application name
+        let app = raw
+            .get("app")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ConfigError::MissingField("app".to_string()))?
+            .to_string();
+
+        Ok(NimbleConfig {
+            builder_type,
+            app,
+            port,
+        })
     }
 }
 
