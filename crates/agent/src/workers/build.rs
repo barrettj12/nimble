@@ -9,14 +9,23 @@ use anyhow::{Context, Result};
 use nimble_core::{builders::select_builder, config::NimbleConfig};
 use serde::{Deserialize, Serialize};
 use tar::Archive;
-use tokio::{fs::create_dir_all, sync::mpsc::Receiver, task::spawn_blocking};
+use tokio::{
+    fs::create_dir_all,
+    sync::mpsc::{Receiver, Sender},
+    task::spawn_blocking,
+};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{config::AgentConfig, db::Database};
+use crate::{
+    config::AgentConfig,
+    db::Database,
+    workers::deploy::{DeployJob, DeployStatus},
+};
 
 pub struct BuildJob {
     pub build_id: Uuid,
+    pub deploy: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,11 +71,16 @@ impl FromStr for BuildStatus {
 pub struct BuildWorker {
     config: Arc<AgentConfig>,
     db: Database,
+    deploy_queue: Sender<DeployJob>,
 }
 
 impl BuildWorker {
-    pub fn new(config: Arc<AgentConfig>, db: Database) -> Self {
-        Self { config, db }
+    pub fn new(config: Arc<AgentConfig>, db: Database, deploy_queue: Sender<DeployJob>) -> Self {
+        Self {
+            config,
+            db,
+            deploy_queue,
+        }
     }
 
     /// Runs the build worker, processing build jobs from the channel.
@@ -75,7 +89,11 @@ impl BuildWorker {
 
         while let Some(job) = build_queue.recv().await {
             let build_id = job.build_id;
-            info!(build_id = %build_id, "Processing build job");
+            info!(
+                build_id = %build_id,
+                deploy = job.deploy,
+                "Processing build job"
+            );
 
             if let Err(e) = self.process_build(job).await {
                 error!(build_id = %build_id, error = %e, "Build failed");
@@ -129,6 +147,8 @@ impl BuildWorker {
 
         let cfg = NimbleConfig::from_file(nimble_yaml_path)?;
         let builder = select_builder(cfg.builder_type);
+        let app_port = cfg.port;
+        let app_name = cfg.app.clone();
 
         let image_name = format!("nimble-build-{}", job.build_id);
         let image_tag = "latest";
@@ -165,6 +185,50 @@ impl BuildWorker {
             .context("Failed to update build status to success")?;
 
         // TODO: update image info in DB
+
+        if job.deploy {
+            self.db
+                .upsert_app(&app_name)
+                .await
+                .context("Failed to upsert app")?;
+
+            let previous_active_deployment = self
+                .db
+                .get_active_deployment_id(&app_name)
+                .await
+                .context("Failed to fetch existing active deployment")?;
+
+            let deploy_id = Uuid::new_v4();
+            self.db
+                .create_deployment(
+                    deploy_id,
+                    job.build_id,
+                    &app_name,
+                    &image.reference,
+                    DeployStatus::Queued,
+                    None,
+                )
+                .await
+                .context("Failed to create deployment record")?;
+
+            self.db
+                .set_active_deployment(&app_name, Some(deploy_id))
+                .await
+                .context("Failed to set active deployment for app")?;
+
+            // Queue deployment job
+            self.deploy_queue
+                .send(DeployJob {
+                    deploy_id,
+                    build_id: job.build_id,
+                    app: app_name.clone(),
+                    previous_active_deployment,
+                    image_reference: image.reference.clone(),
+                    app_port,
+                })
+                .await
+                .context("Failed to enqueue deployment job")?;
+        }
 
         Ok(())
     }

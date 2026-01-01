@@ -20,6 +20,18 @@ struct BuildResponse {
     status: String,
 }
 
+#[derive(Deserialize, Debug)]
+struct DeploymentResponse {
+    id: String,
+    status: String,
+    image: String,
+    build_id: String,
+    app: String,
+    container_id: Option<String>,
+    container_name: Option<String>,
+    address: Option<String>,
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deploys_example_app() -> Result<()> {
     println!("Starting nimble e2e test");
@@ -37,12 +49,53 @@ async fn deploys_example_app() -> Result<()> {
     wait_for_health().await?;
 
     println!("Agent is healthy, deploying sample app");
-    let cli_output = run_cli_deploy().await?;
-    let build_id = extract_build_id(&cli_output);
+    let first_cli_output = run_cli_deploy().await?;
+    let first_build_id = extract_build_id(&first_cli_output);
 
     verify_latest_build().await?;
 
-    if let Some(build_id) = build_id {
+    let first_deployment = if let Some(build_id) = &first_build_id {
+        println!("Verifying deployed app responds (build {build_id})");
+        let deployment = fetch_latest_deployment(build_id).await?;
+        verify_deployed_app(&deployment).await?;
+        Some(deployment)
+    } else {
+        None
+    };
+
+    println!("Deploying updated app to verify old deployment cleanup");
+    let second_cli_output = run_cli_deploy().await?;
+    let second_build_id = extract_build_id(&second_cli_output);
+
+    verify_latest_build().await?;
+
+    let second_deployment = if let Some(build_id) = &second_build_id {
+        println!("Verifying replacement deployment responds (build {build_id})");
+        let deployment = fetch_latest_deployment(build_id).await?;
+        verify_deployed_app(&deployment).await?;
+        Some(deployment)
+    } else {
+        None
+    };
+
+    if let (Some(first), Some(second)) = (first_deployment.as_ref(), second_deployment.as_ref()) {
+        println!(
+            "Ensuring previous deployment {} for app {} was removed before {}",
+            first.id, first.app, second.id
+        );
+        if let Some(container_ref) = first.container_name.as_ref() {
+            ensure_container_absent("name", container_ref).await?;
+        } else if let Some(container_ref) = first.container_id.as_ref() {
+            ensure_container_absent("id", container_ref).await?;
+        }
+    }
+
+    if let Some(build_id) = first_build_id {
+        println!("Cleaning up built image for build {build_id}");
+        cleanup_image(&build_id).await.ok();
+    }
+
+    if let Some(build_id) = second_build_id {
         println!("Cleaning up built image for build {build_id}");
         cleanup_image(&build_id).await.ok();
     }
@@ -166,6 +219,71 @@ async fn verify_latest_build() -> Result<()> {
     }
 }
 
+async fn verify_deployed_app(deployment: &DeploymentResponse) -> Result<()> {
+    let build_id = &deployment.build_id;
+    if deployment.status != "running" {
+        bail!(
+            "latest deployment not running; status is {} for deployment {}",
+            deployment.status,
+            deployment.id
+        );
+    }
+
+    if deployment.app != "go-hello" {
+        bail!(
+            "deployment app mismatch: expected go-hello, got {}",
+            deployment.app
+        );
+    }
+
+    let address = deployment
+        .address
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("deployment missing address"))?;
+
+    println!(
+        "Pinging app at {address} for build {build_id} (deployment {} image {} container {:?})",
+        deployment.id, deployment.image, deployment.container_name
+    );
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&address)
+        .send()
+        .await
+        .context("request deployed app")?
+        .error_for_status()
+        .context("deployed app returned error")?;
+
+    let body = resp.text().await.context("read deployed app body")?;
+    if !body.contains("Hello, World!") {
+        bail!("unexpected app response: {body}");
+    }
+
+    println!("App responded successfully: {}", body.trim());
+    Ok(())
+}
+
+async fn fetch_latest_deployment(build_id: &str) -> Result<DeploymentResponse> {
+    let client = reqwest::Client::new();
+    let url = format!("{AGENT_URL}/deployments?build_id={build_id}");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .context("request deployment list")?
+        .error_for_status()
+        .context("deployment list returned error")?;
+
+    let mut deployments: Vec<DeploymentResponse> =
+        resp.json().await.context("decode deployment list")?;
+
+    deployments
+        .drain(..)
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no deployment found for build {build_id}"))
+}
+
 async fn cleanup_image(build_id: &str) -> Result<()> {
     let image_ref = format!("nimble-build-{build_id}:latest");
     let status = TokioCommand::new("docker")
@@ -182,6 +300,29 @@ async fn cleanup_image(build_id: &str) -> Result<()> {
         Ok(())
     } else {
         bail!("failed to remove build image {image_ref}")
+    }
+}
+
+async fn ensure_container_absent(filter: &str, value: &str) -> Result<()> {
+    let output = TokioCommand::new("docker")
+        .arg("ps")
+        .arg("-a")
+        .arg("--filter")
+        .arg(format!("{filter}={value}"))
+        .arg("--quiet")
+        .output()
+        .await
+        .context("check for old deployment container")?;
+
+    if !output.status.success() {
+        bail!("docker ps failed while checking container {value}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.trim().is_empty() {
+        Ok(())
+    } else {
+        bail!("expected container {value} to be removed but docker ps returned results")
     }
 }
 
